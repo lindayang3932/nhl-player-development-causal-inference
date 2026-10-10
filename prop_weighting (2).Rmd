@@ -1,0 +1,388 @@
+---
+title: "NHL"
+author: "Linda"
+date: "3/7/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+# Propensity Score Weighting
+
+## Data Cleaning
+
+In the data cleaning process below, we are mapping draft position to a numerical value in order to use it as a predictor in order model. Additionally, we are converting player metrics such as plus minus, assists , goals,and penalty minus to a per game level.
+```{r}
+
+draft_value = c(917, 871, 826, 783, 741, 702, 665, 629, 592, 565, 535, 507, 481, 456, 433, 413, 395, 379, 364, 350, 336, 324, 315, 308, 302, 297, 291, 283, 275, 265, 255, 246, 237, 228, 222, 217, 213, 211, 209, 208, 206, 203, 199, 196, 192, 189, 188, 186,186,  185, 185, 184, 183, 182, 180, 178, 176, 176, 175, 175,
+           175, 176, 176, 177, 177, 177, 176, 176, 174, 173, 171, 169, 167, 165, 164, 162, 160, 158, 156, 155, 153, 151, 149, 147, 145, 142, 140, 137, 134, 131, 128, 125, 122, 119, 117, 114, 113, 111, 109, 107, 106, 104, 103, 101, 99, 98, 97, 95, 94, 93, 92, 91, 90, 89,89,89,89,88,88,88, 88, 88, 87, 87, 86, 86,85,85,85,85, 84,84,84,84,84,84, 83,83,83,83, 82,82,82,82, 81,81,81, 80,80,80, 79, 79,79,78,78,78,77,77,77,77,76,76,76,75,75,75,74,74,73,73,72,72,71,70,70,69,69,68,68,67,67,66,66,65,65,64,64,63,63,62,62,61,60,60,59,59,58,58,57,57,56,55,55,54,54,53,53,52,52,51 )
+other = rep(50, 83)
+length(c(draft_value, other))
+
+library(dplyr)
+bio = read.csv("complete_bio_updated_withID.csv")
+stat = read.csv("complete_stat_updated_withID.csv")
+draft = read.csv("player_draft.csv")
+draft_value = c(917, 871, 826, 783, 741, 702, 665, 629, 592, 565, 535, 507, 481, 456, 433, 413, 395, 379, 364, 350, 336, 324, 315, 308, 302, 297, 291, 283, 275, 265, 255, 246, 237, 228, 222, 217, 213, 211, 209, 208, 206, 203, 199, 196, 192, 189, 188, 186,186,  185, 185, 184, 183, 182, 180, 178, 176, 176, 175, 175,
+           175, 176, 176, 177, 177, 177, 176, 176, 174, 173, 171, 169, 167, 165, 164, 162, 160, 158, 156, 155, 153, 151, 149, 147, 145, 142, 140, 137, 134, 131, 128, 125, 122, 119, 117, 114, 113, 111, 109, 107, 106, 104, 103, 101, 99, 98, 97, 95, 94, 93, 92, 91, 90, 89,89,89,89,88,88,88, 88, 88, 87, 87, 86, 86,85,85,85,85, 84,84,84,84,84,84, 83,83,83,83, 82,82,82,82, 81,81,81, 80,80,80, 79, 79,79,78,78,78,77,77,77,77,76,76,76,75,75,75,74,74,73,73,72,72,71,70,70,69,69,68,68,67,67,66,66,65,65,64,64,63,63,62,62,61,60,60,59,59,58,58,57,57,56,55,55,54,54,53,53,52,52,51 )
+other = rep(50, 83)
+draft_value = (c(draft_value, other))
+Draftposition = 1:293
+draft_values =as.data.frame(cbind(Draftposition, draft_value ))
+nhl = stat %>% left_join(bio, by = 'ID')
+nhl = nhl %>% left_join(draft, by = 'ID')
+nhl = nhl %>% left_join(draft_values, by = 'Draftposition')
+library(tidyr)
+nhl[which(nhl$Player == 'Aaron Ave'),]
+nhl= nhl %>% separate(DateofBirth, into = c('month' , 'birthdate', 'BirthYear'), sep = " ")
+nhl =  nhl  %>% separate(Season, into = c('Season', 'endseason'), sep = '-')
+nhl$BirthYear = as.numeric(nhl$BirthYear)
+nhl$Season = as.numeric(nhl$Season)
+nhl = nhl[complete.cases(nhl$Season), ] 
+
+nhl$age_actual =  nhl$Season - nhl$BirthYear 
+nhl$Goals = as.numeric(nhl$Goals)
+nhl$PlusMinus = as.numeric(nhl$PlusMinus)
+nhl$PenaltyMin = as.numeric(nhl$PenaltyMinutes)
+nhl$GamesPlayed = as.numeric(nhl$Games)
+nhl$Assists = as.numeric(nhl$Assists)
+nhl$TotalPoints = as.numeric(nhl$TotalPoints)
+library(tidyr)
+updated_nhl = nhl
+updated_nhl$goals_pergame = updated_nhl$Goals/updated_nhl$GamesPlayed
+updated_nhl$plusminus_pergame = updated_nhl$PlusMinus/updated_nhl$GamesPlayed
+updated_nhl$PenaltyMin_pergame = updated_nhl$PenaltyMin/updated_nhl$GamesPlayed
+updated_nhl$Assists_pergame = updated_nhl$Assists/updated_nhl$GamesPlayed
+updated_nhl$TotalPoints_pergame = updated_nhl$TotalPoints/updated_nhl$GamesPlayed
+updated_nhl[which(updated_nhl$Player == 'Aaron Ave'),]
+```
+
+
+Next, we filtered the data so that we obtain each player's metrics at draft year 0 and their developmental league at draft year 1. We also calculated the average number of NHL games playerd for each player, which will serve as our response variable
+
+
+
+```{r}
+players_ushl_18 = updated_nhl[which(updated_nhl$age_actual == 18 & updated_nhl$League == 'USHL'),]$ID
+updated_nhl = updated_nhl[which(updated_nhl$ID %in% players_ushl_18), ]
+
+
+updated_nhl$plusminus_pergame_draft_year = updated_nhl$plusminus_pergame
+updated_nhl[which(updated_nhl$age_actual != 18),]$plusminus_pergame_draft_year = 0
+
+
+updated_nhl$totalpoints_pergame_draft_year = updated_nhl$TotalPoints_pergame
+updated_nhl[which(updated_nhl$age_actual != 18),]$totalpoints_pergame_draft_year= 0
+
+
+updated_nhl$goals_pergame_draft_year = updated_nhl$goals_pergame
+updated_nhl[which(updated_nhl$age_actual != 18),]$goals_pergame_draft_year = 0
+
+
+updated_nhl$penalty_pergame_draft_year = updated_nhl$PenaltyMin_pergame
+updated_nhl[which(updated_nhl$age_actual != 18),]$penalty_pergame_draft_year = 0
+
+
+updated_nhl$assists_pergame_draft_year = updated_nhl$Assists_pergame
+updated_nhl[which(updated_nhl$age_actual != 18),]$assists_pergame_draft_year = 0
+
+
+updated_nhl$GamesPlayed_after_in_NHL = updated_nhl$GamesPlayed
+
+updated_nhl[which(updated_nhl$League != 'NHL' ),]$GamesPlayed_after_in_NHL = 0
+updated_nhl$league_19 = updated_nhl$League
+updated_nhl[which(updated_nhl$age_actual != 19), ]$league_19 = ''
+updated_nhl = updated_nhl %>% group_by(ID)  %>% mutate(total_games_in_nhl = sum(GamesPlayed_after_in_NHL), goals_pergame_1 = sum(goals_pergame_draft_year), 
+                                                           plusminus_pergame_1 = sum(plusminus_pergame_draft_year),totalpoints_pergame_1 = sum(totalpoints_pergame_draft_year),  penaltymin_pergame_1 = sum(penalty_pergame_draft_year),assists_pergame_1 = sum(assists_pergame_draft_year) ,c= max(league_19), retirement = max(Season))
+
+updated_nhl[which(updated_nhl$Player =='A.J. Drobot'),]
+updated_nhl$position_new = 'backward'
+updated_nhl[which(updated_nhl$Position %in% c('C', 'F', 'LW', 'RW')), ]$position_new = 'forward' 
+updated_nhl$more_than_10_games = 0
+updated_nhl[which(updated_nhl$total_games_in_nhl > 10), ]$more_than_10_games = 1
+
+updated_nhl = updated_nhl[which(updated_nhl$age_actual == 18), ]
+updated_nhl = updated_nhl[which(updated_nhl$c %in% c('USHL', 'NCAA')), ]
+updated_nhl$temp = 1
+updated_nhl = updated_nhl %>% group_by(ID) %>% mutate(temp_2 = cumsum(temp))
+updated_nhl = updated_nhl[which(updated_nhl$temp_2 == 1), ]
+
+```
+
+We then created height and weight information for each player. In our analysis, we saw that height and weight were very correlated with other. To account for this, we created a relative weight variable that removes any correlation it has with weight  
+
+```{r}
+updated_nhl = updated_nhl %>% separate(Height, c("blah","blah1", "height","blah3"), sep = " ")
+updated_nhl$height = as.numeric(updated_nhl$height)
+updated_nhl = updated_nhl %>% separate(Weight, c("Weight","blah1h", "blahh2", "blahh3", "blahh4"), sep = " ")
+updated_nhl$Weight = as.numeric(updated_nhl$Weight)
+weight_height = lm(Weight ~ height, data = updated_nhl)
+updated_nhl$exp_weight = predict(weight_height, newdata = updated_nhl)
+updated_nhl$rel_weight = updated_nhl$Weight - updated_nhl$exp_weight
+
+
+updated_nhl$games_per_year_in_nhl = updated_nhl$total_games_in_nhl/ (updated_nhl$retirement - updated_nhl$BirthYear - 18)
+updated_nhl[, c('Player.x', 'BirthYear', 'retirement', 'total_games_in_nhl', 'games_per_year_in_nhl')]
+#updated_nhl = updated_nhl[which(updated_nhl$Season <= 2015), ]
+```
+
+
+We then filter out the data for forward positioned players and backward positioned players.
+
+
+
+```{r}
+updated_nhl$y = 0
+updated_nhl[which(updated_nhl$c == 'NCAA'),]$y = 1
+updated_nhl_forward = updated_nhl[which(updated_nhl$position_new =='forward'),  ]
+updated_nhl_backward = updated_nhl[which(updated_nhl$position_new =='backward'),  ]
+```
+
+
+
+For players that didn't make it to the draft or did not get a draft position, their draft value was set to 27
+
+```{r}
+updated_nhl_forward[which(is.na(updated_nhl_forward$Draftposition)), ]$draft_value = 27
+updated_nhl_forward$draft = 1
+updated_nhl_forward[which(is.na(updated_nhl_forward$Draftposition)), ]$draft = 0
+updated_nhl_forward[complete.cases(updated_nhl_forward$penaltymin_pergame_1, updated_nhl_forward$assists_pergame_1, updated_nhl_forward$plusminus_pergame_1, updated_nhl_forward$goals_pergame_1, updated_nhl_forward$Weight, updated_nhl_forward$height, updated_nhl_forward$draft_value),]
+```
+
+
+## Forward Position Players: Propensity Score Weighting Process
+
+We predicted the treatment of each player (NCAA vs USHL at draft year 1) based on predictors in draft year 0 using a logistic model. The outcome of this model (P(T=NCAA)) became our propensity score. Players were then weighted based on this propensity score 
+
+```{r}
+library(Matching)
+library(arm)
+library(dplyr)
+
+updated_nhl_forward[c('penaltymin_pergame_1', 'plusminus_pergame_1',  'rel_weight', 'height', 'draft_value')] <- scale(updated_nhl_forward[c('penaltymin_pergame_1', 'plusminus_pergame_1', 'rel_weight', 'height', 'draft_value')])
+mod1 = glm(y ~ penaltymin_pergame_1 + plusminus_pergame_1  +  rel_weight + height + draft_value , data = updated_nhl_forward, family = 'binomial')
+summary(mod1)
+complete_Cases =updated_nhl_forward[complete.cases(updated_nhl_forward[, c('y', 'penaltymin_pergame_1', 'plusminus_pergame_1', 'rel_weight', 'height', 'draft_value')]), ]
+complete_Cases
+p.scores = predict(mod1, type = 'link')
+complete_Cases$psvalues = predict(mod1, type = 'response')
+complete_Cases$weight.ATE = ifelse(complete_Cases$y == 1, 1/complete_Cases$psvalues, 1/(1- complete_Cases$psvalues))
+complete_Cases$weight.ATE2 = complete_Cases$psvalues*(1 - complete_Cases$psvalues)
+plot(p.scores, jitter(updated_nhl_forward[complete.cases(updated_nhl_forward[, c('y', 'penaltymin_pergame_1', 'plusminus_pergame_1', 'rel_weight', 'height', 'draft_value')]), ]$y, amount = 0.05), xlab = "Propensity Score", ylab = "P[NCAA = 1]")
+o.scores = sort(p.scores)
+lines(o.scores, exp(o.scores)/(1 + exp(o.scores)))
+matches = matching(z = complete_Cases$y, score = o.scores)
+matched = complete_Cases[matches$match.ind, ]
+```
+
+
+
+Using the weighted data set, we then check to see if we removed selection if our coefficient estimates are zero when we predict treatment effect based on predictions in draft year 0 . Here we are comparing the two weighting methods with propensity score matching. We then use the weigthed data to predict the average number of games played in the NHL based on predictors in draft year 0 and league in draft year 1 (our treatment effect). This is where we can accurately assess the coefficient estimates and significance of the treatment 
+
+
+```{r}
+method_1 = glm(y ~ penaltymin_pergame_1 + plusminus_pergame_1 +rel_weight + height +   draft_value ,  family = 'binomial', data = complete_Cases, weights = weight.ATE)
+method_2 = glm(y ~ penaltymin_pergame_1 + plusminus_pergame_1 + rel_weight + height +   draft_value ,  family = 'binomial', data = complete_Cases, weights = weight.ATE2)
+no_weights = glm(y ~ penaltymin_pergame_1 + plusminus_pergame_1 + rel_weight + height +  draft_value,  family = 'binomial', data = matched)
+
+
+
+#######
+
+# now let's compare estimates of the effect of "watched" on
+# post-test score, controlling for all the factors we have
+# been interested in...
+
+# the unmatched regression analysis
+
+
+
+mod1 = lm( games_per_year_in_nhl ~penaltymin_pergame_1 + plusminus_pergame_1 + rel_weight + height +  c +   draft_value , data = complete_Cases)
+summary(mod1)
+coef(mod1)
+
+# the matched regression analysis
+
+mod2 = lm(games_per_year_in_nhl ~ penaltymin_pergame_1 + plusminus_pergame_1 + rel_weight + height +  c +  draft_value , data = complete_Cases, weights = weight.ATE)
+summary(mod2)
+coef(mod2)
+
+mod3 = lm(games_per_year_in_nhl ~ penaltymin_pergame_1 + plusminus_pergame_1 + rel_weight + height +  c + draft_value , data = complete_Cases, weights = weight.ATE2)
+summary(mod3)
+coef(mod3)
+```
+
+We then visualize the model coefficient estimates below
+
+```{r , warning = FALSE, message=FALSE}
+library(dotwhisker)
+library(dplyr)
+dwplot(list(mod1, mod2),
+       vline = geom_vline(xintercept = 0,  linetype = 2)) +
+     theme_bw() + xlab("Coefficient Estimate") + ylab("") +
+     geom_vline(xintercept = 0, colour = "grey60", linetype = 2) +
+     ggtitle("Weighting Method 1") +
+  theme(legend.position="bottom")+
+     theme(plot.title = element_text(face="bold"),
+           
+          
+           legend.background = element_rect(colour="grey80"),
+           legend.title = element_blank()) +   scale_color_discrete(name = "Method", labels = c("Before Weighing", "After Weighting (Method 1)"))
+
+dwplot(list(mod1, mod3),
+       vline = geom_vline(xintercept = 0, colour = "grey60", linetype = 2)) +
+     theme_bw() + xlab("Coefficient Estimate") + ylab("") +
+     geom_vline(xintercept = 0, colour = "grey60", linetype = 2) +
+     ggtitle("Weighting Method 2") +
+  theme(legend.position="bottom")+
+     theme(plot.title = element_text(face="bold"),
+           
+          
+           legend.background = element_rect(colour="grey80"),
+           legend.title = element_blank()) +   scale_color_discrete(name = "Method", labels = c("Before Weighing", "After Weighting (Method 2)"))
+```
+
+
+```{r, warning = FALSE, message=FALSE}
+library(dotwhisker)
+library(dplyr)
+dwplot(list(method_1, method_2, no_weights),
+       vline = geom_vline(xintercept = 0, colour = "grey60", linetype = 2)) +
+     theme_bw() + xlab("Coefficient Estimate") + ylab("") +
+     geom_vline(xintercept = 0, colour = "grey60", linetype = 2) +
+     ggtitle("Propensity Score Matching vs Weighting") +
+  theme(legend.position="bottom")+
+     theme(plot.title = element_text(face="bold"),
+           
+          
+           legend.background = element_rect(colour="grey80"),
+           legend.title = element_blank()) +   scale_color_discrete(name = "Method", labels = c("Weighting Method 1", "Weighting Method 2", "Propensity Score Matching"))
+```
+
+
+## Defense Men Propensity Score Weighting
+
+We repeat the same process above for defense men. For players that didn't make it to the draft or did not get a draft position, their draft value was set to 27
+
+```{r}
+updated_nhl_backward[which(is.na(updated_nhl_backward$Draftposition)), ]$draft_value = 27
+
+updated_nhl_backward$draft = 1
+updated_nhl_backward[which(is.na(updated_nhl_backward$Draftposition)), ]$draft = 0
+
+```
+
+
+We predicted the treatment of each player (NCAA vs USHL at draft year 1) based on predictors in draft year 0 using a logistic model. The outcome of this model (P(T=NCAA)) became our propensity score. Players were then weighted based on this propensity score 
+
+
+```{r}
+library(Matching)
+library(arm)
+
+
+updated_nhl_backward[c('penaltymin_pergame_1', 'plusminus_pergame_1', 'rel_weight', 'height',   'assists_pergame_1' , 'goals_pergame_1')] <- scale(updated_nhl_backward[c('penaltymin_pergame_1', 'plusminus_pergame_1', 'rel_weight', 'height',  'assists_pergame_1' , 'goals_pergame_1')])
+mod1 = glm(y ~  penaltymin_pergame_1 + plusminus_pergame_1  + rel_weight + height +goals_pergame_1 + assists_pergame_1 , data = updated_nhl_backward, family = 'binomial')
+
+summary(mod1)
+
+complete_Cases =updated_nhl_backward[complete.cases(updated_nhl_backward[, c('y', 'penaltymin_pergame_1' , 'plusminus_pergame_1'  , 'rel_weight' , 'height', 'goals_pergame_1', 'assists_pergame_1' )]), ]
+p.scores = predict(mod1, type = 'link')
+complete_Cases$psvalues = predict(mod1, type = 'response')
+complete_Cases$weight.ATE = ifelse(complete_Cases$y == 1, 1/complete_Cases$psvalues, 1/(1- complete_Cases$psvalues))
+# e*(1-e) fpr all 
+complete_Cases$weight.ATE2 = complete_Cases$psvalues*(1 - complete_Cases$psvalues)
+plot(p.scores, jitter(updated_nhl_backward[complete.cases(updated_nhl_backward[, c('y', 'penaltymin_pergame_1' , 'plusminus_pergame_1'  , 'rel_weight' , 'height', 'goals_pergame_1', 'assists_pergame_1')]), ]$y, amount = 0.05), xlab = "Propensity Score", ylab = "P[NCAA = 1]")
+o.scores = sort(p.scores)
+lines(o.scores, exp(o.scores)/(1 + exp(o.scores)))
+matches = matching(z = complete_Cases$y, score = p.scores)
+matched = complete_Cases[matches$match.ind, ]
+```
+
+
+Using the weighted data set, we then check to see if we removed selection if our coefficient estimates are zero when we predict treatment effect based on predictions in draft year 0 . Here we are comparing the two weighting methods with propensity score matching. We then use the weigthed data to predict the average number of games played in the NHL based on predictors in draft year 0 and league in draft year 1 (our treatment effect). This is where we can accurately assess the coefficient estimates and significance of the treatment
+
+
+```{r}
+library(arm)
+library(foreign)
+#b.stats = balance(complete_Cases[, c('y', 'plusminus_pergame', 'goals_pergame', 'position_new', 'PenaltyMin_pergame', 'Weight', 'height')], matches$match.ind, mod1)
+#plot(b.stats)
+
+method_1 = glm(y ~  penaltymin_pergame_1 + plusminus_pergame_1  + rel_weight + height +goals_pergame_1 + assists_pergame_1  ,  family = 'binomial', data = complete_Cases, weights = weight.ATE)
+method_2 = glm(y ~   penaltymin_pergame_1 + plusminus_pergame_1  + rel_weight + height ++goals_pergame_1 + assists_pergame_1  ,  family = 'binomial', data = complete_Cases, weights = weight.ATE2)
+matching = glm(y ~  penaltymin_pergame_1 + plusminus_pergame_1  + rel_weight + height +goals_pergame_1 + assists_pergame_1 ,  family = 'binomial', data = matched)
+
+
+
+#######
+
+# now let's compare estimates of the effect of "watched" on
+# post-test score, controlling for all the factors we have
+# been interested in...
+
+# the unmatched regression analysis
+
+
+
+mod1 = lm(games_per_year_in_nhl ~  penaltymin_pergame_1 + plusminus_pergame_1 + rel_weight + height + goals_pergame_1 + assists_pergame_1 + c  , data = complete_Cases)
+summary(mod1)
+coef(mod1)
+
+# the matched regression analysis
+
+mod2 = lm(games_per_year_in_nhl ~  penaltymin_pergame_1 + plusminus_pergame_1 +rel_weight + height + goals_pergame_1 + assists_pergame_1+ c , data = complete_Cases, weights =weight.ATE)
+summary(mod2)
+coef(mod2)
+
+
+mod3 = lm(games_per_year_in_nhl ~  penaltymin_pergame_1 + plusminus_pergame_1 +rel_weight + height +goals_pergame_1 + assists_pergame_1 + c , data = complete_Cases, weights =weight.ATE2)
+summary(mod3)
+coef(mod3)
+```
+
+We then visualize model coefficient estimates
+
+```{r, warning = FALSE, message=FALSE}
+library(dotwhisker)
+library(dplyr)
+dwplot(list(method_1, method_2, matching),
+       vline = geom_vline(xintercept = 0, colour = "grey60", linetype = 2)) +
+     theme_bw() + xlab("Coefficient Estimate") + ylab("") +
+     geom_vline(xintercept = 0, colour = "grey60", linetype = 2) +
+     ggtitle("Propensity Score Matching vs Weighting") +
+  theme(legend.position="bottom")+
+     theme(plot.title = element_text(face="bold"),
+           
+          
+           legend.background = element_rect(colour="grey80"),
+           legend.title = element_blank()) +   scale_color_discrete(name = "Method", labels = c("Weighting Method 1", "Weighting Method 2", "Propensity Score Matching"))
+
+
+
+dwplot(list(mod1, mod2),
+       vline = geom_vline(xintercept = 0, colour = "grey60", linetype = 2)) +
+     theme_bw() + xlab("Coefficient Estimate") + ylab("") +
+     geom_vline(xintercept = 0, colour = "grey60", linetype = 2) +
+     ggtitle("Weighting Method 1") +
+  theme(legend.position="bottom")+
+     theme(plot.title = element_text(face="bold"),
+           
+          
+           legend.background = element_rect(colour="grey80"),
+           legend.title = element_blank()) +   scale_color_discrete(name = "Method", labels = c("Before Weighing", "After Weighting (Method 1)"))
+
+dwplot(list(mod1, mod3),
+       vline = geom_vline(xintercept = 0, colour = "grey60", linetype = 2)) +
+     theme_bw() + xlab("Coefficient Estimate") + ylab("") +
+     geom_vline(xintercept = 0, colour = "grey60", linetype = 2) +
+     ggtitle("Weighting Method 2") +
+  theme(legend.position="bottom")+
+     theme(plot.title = element_text(face="bold"),
+           
+          
+           legend.background = element_rect(colour="grey80"),
+           legend.title = element_blank()) +   scale_color_discrete(name = "Method", labels = c("Before Weighing", "After Weighting (Method 2)"))
+
+```
