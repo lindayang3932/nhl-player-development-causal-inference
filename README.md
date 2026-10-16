@@ -73,11 +73,4 @@ This work included data preparation, construction of player-level covariates, pr
 - **prop_weighting.Rmd:** R Markdown implementation of the propensity score analysis, including data preparation, weighting, matching comparisons, and outcome modeling.
 - **Final Progress Report.pdf:** Final presentation summarizing the team's analysis and findings.
 
-## Implementation
-
-**Language:** R
-
-**Methods:** Propensity score weighting, logistic regression, weighted linear regression, propensity score matching, and Bayesian Additive Regression Trees.
-
-The included R Markdown file documents the propensity score component of the analysis. It references external player-level datasets that are not included in this repository.
 
